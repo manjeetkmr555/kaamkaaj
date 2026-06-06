@@ -1,35 +1,36 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import pg from "pg";
+import { bootstrapAdmin } from "./lib/admin.js";
 
-const dbPath =
-  process.env.DATABASE_PATH ??
-  path.resolve(__dirname, "../../database/kaamkaaj.db");
+const { Pool } = pg;
+
+export type Db = pg.Pool;
 
 const schemaPath = path.resolve(__dirname, "../../database/schema.sql");
 
-export function initDb(): Database.Database {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  const schema = fs.readFileSync(schemaPath, "utf8");
-  db.exec(schema);
-
-  const columns = db
-    .prepare("PRAGMA table_info(reading_items)")
-    .all() as { name: string }[];
-  if (!columns.some((c) => c.name === "visible_to_shared")) {
-    db.exec(
-      "ALTER TABLE reading_items ADD COLUMN visible_to_shared INTEGER NOT NULL DEFAULT 1",
+export function getDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is required (e.g. postgresql://kaamkaaj:kaamkaaj@localhost:5432/kaamkaaj)",
     );
   }
+  return url;
+}
 
-  return db;
+export async function initDb(): Promise<Db> {
+  const pool = new Pool({ connectionString: getDatabaseUrl() });
+  const schema = fs.readFileSync(schemaPath, "utf8");
+  await pool.query(schema);
+  await bootstrapAdmin(pool);
+  return pool;
 }
 
 export type UserRow = {
   id: number;
   email: string;
   password_hash: string;
-  created_at: string;
+  is_admin: boolean;
+  created_at: Date;
 };

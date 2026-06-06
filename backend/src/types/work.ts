@@ -6,6 +6,6 @@ export type WorkTaskRow = {
   title: string;
   status: WorkStatus;
   sort_order: number;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 };

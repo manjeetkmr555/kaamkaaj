@@ -1,15 +1,26 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import type Database from "better-sqlite3";
+import type { Db, UserRow } from "../db.js";
 import {
   INVALID_EMAIL_MESSAGE,
   validateEmail,
   validateEmailDomainStructure,
   validateEmailFormat,
 } from "../lib/emailValidation.js";
-import type { UserRow } from "../db.js";
+import { isEmailAllowed } from "../lib/allowedEmails.js";
 
-export function createAuthRouter(db: Database.Database): Router {
+const NOT_ALLOWED_MESSAGE =
+  "This email is not authorized to create an account. Contact your administrator.";
+
+function userPayload(user: Pick<UserRow, "id" | "email" | "is_admin">) {
+  return {
+    id: user.id,
+    email: user.email,
+    isAdmin: Boolean(user.is_admin),
+  };
+}
+
+export function createAuthRouter(db: Db): Router {
   const router = Router();
 
   router.post("/validate-email", async (req, res) => {
@@ -24,7 +35,11 @@ export function createAuthRouter(db: Database.Database): Router {
       });
     }
 
-    return res.json({ valid: true, email: result.email });
+    return res.json({
+      valid: true,
+      email: result.email,
+      allowed: await isEmailAllowed(db, result.email),
+    });
   });
 
   router.post("/register", async (req, res) => {
@@ -47,26 +62,35 @@ export function createAuthRouter(db: Database.Database): Router {
       });
     }
 
-    const existing = db
-      .prepare("SELECT id FROM users WHERE email = ?")
-      .get(emailResult.email) as { id: number } | undefined;
+    const existing = await db.query<{ id: number }>(
+      "SELECT id FROM users WHERE email = $1",
+      [emailResult.email],
+    );
 
-    if (existing) {
+    if (existing.rows.length > 0) {
       return res.status(409).json({
         message: "An account with this email already exists.",
         field: "email",
       });
     }
 
+    if (!(await isEmailAllowed(db, emailResult.email))) {
+      return res.status(403).json({
+        message: NOT_ALLOWED_MESSAGE,
+        field: "email",
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
-    const insert = db.prepare(
-      "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+    const { rows } = await db.query<Pick<UserRow, "id" | "email" | "is_admin">>(
+      `INSERT INTO users (email, password_hash) VALUES ($1, $2)
+       RETURNING id, email, is_admin`,
+      [emailResult.email, passwordHash],
     );
-    const info = insert.run(emailResult.email, passwordHash);
 
     return res.status(201).json({
       message: "Account created successfully.",
-      user: { id: Number(info.lastInsertRowid), email: emailResult.email },
+      user: userPayload(rows[0]),
     });
   });
 
@@ -99,9 +123,13 @@ export function createAuthRouter(db: Database.Database): Router {
       });
     }
 
-    const user = db
-      .prepare("SELECT id, email, password_hash FROM users WHERE email = ?")
-      .get(emailResult.email) as Pick<UserRow, "id" | "email" | "password_hash"> | undefined;
+    const { rows } = await db.query<
+      Pick<UserRow, "id" | "email" | "password_hash" | "is_admin">
+    >(
+      "SELECT id, email, password_hash, is_admin FROM users WHERE email = $1",
+      [emailResult.email],
+    );
+    const user = rows[0];
 
     if (!user) {
       return res.status(401).json({
@@ -120,7 +148,7 @@ export function createAuthRouter(db: Database.Database): Router {
 
     return res.json({
       message: "Login successful.",
-      user: { id: user.id, email: user.email },
+      user: userPayload(user),
     });
   });
 

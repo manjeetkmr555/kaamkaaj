@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 import { fetchTasksByUser } from "../lib/workTasks.js";
 
 import type { WorkStatus, WorkTaskRow } from "../types/work.js";
@@ -20,88 +20,81 @@ function parseUserId(value: unknown): number | null {
   return id;
 }
 
-function userExists(db: Database.Database, userId: number): boolean {
-  const row = db.prepare("SELECT id FROM users WHERE id = ?").get(userId) as
-    | { id: number }
-    | undefined;
-  return Boolean(row);
+async function userExists(db: Db, userId: number): Promise<boolean> {
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM users WHERE id = $1",
+    [userId],
+  );
+  return rows.length > 0;
 }
 
-function nextSortOrder(
-  db: Database.Database,
+async function nextSortOrder(
+  db: Db,
   userId: number,
   status: WorkStatus,
-): number {
-  const row = db
-    .prepare(
-      "SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM work_tasks WHERE user_id = ? AND status = ?",
-    )
-    .get(userId, status) as { max_order: number };
-  return row.max_order + 1;
+): Promise<number> {
+  const { rows } = await db.query<{ max_order: number }>(
+    "SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM work_tasks WHERE user_id = $1 AND status = $2",
+    [userId, status],
+  );
+  return rows[0].max_order + 1;
 }
 
-export function createWorkRouter(db: Database.Database): Router {
+export function createWorkRouter(db: Db): Router {
   const router = Router();
 
-  router.get("/tasks", (req, res) => {
+  router.get("/tasks", async (req, res) => {
     const userId = parseUserId(req.query.userId);
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
 
-    const tasks = fetchTasksByUser(db, userId);
+    const tasks = await fetchTasksByUser(db, userId);
 
     return res.json({ tasks, readOnly: false });
   });
 
-  router.post("/tasks", (req, res) => {
+  router.post("/tasks", async (req, res) => {
     const userId = parseUserId(req.body?.userId);
     const title =
       typeof req.body?.title === "string" ? req.body.title.trim() : "";
 
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
     if (!title || title.length > 500) {
       return res.status(400).json({ message: "Task title is required." });
     }
 
-    const sortOrder = nextSortOrder(db, userId, "todo");
-    const info = db
-      .prepare(
-        `INSERT INTO work_tasks (user_id, title, status, sort_order)
-         VALUES (?, ?, 'todo', ?)`,
-      )
-      .run(userId, title, sortOrder);
+    const sortOrder = await nextSortOrder(db, userId, "todo");
+    const { rows } = await db.query<WorkTaskRow>(
+      `INSERT INTO work_tasks (user_id, title, status, sort_order)
+       VALUES ($1, $2, 'todo', $3)
+       RETURNING id, user_id, title, status, sort_order, created_at, updated_at`,
+      [userId, title, sortOrder],
+    );
 
-    const task = db
-      .prepare(
-        `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-         FROM work_tasks WHERE id = ?`,
-      )
-      .get(Number(info.lastInsertRowid)) as WorkTaskRow;
-
-    return res.status(201).json({ task });
+    return res.status(201).json({ task: rows[0] });
   });
 
-  router.patch("/tasks/:id/status", (req, res) => {
+  router.patch("/tasks/:id/status", async (req, res) => {
     const taskId = Number(req.params.id);
     const userId = parseUserId(req.body?.userId);
     const status = req.body?.status as WorkStatus;
 
-    if (!userId || !userExists(db, userId) || !Number.isInteger(taskId)) {
+    if (!userId || !(await userExists(db, userId)) || !Number.isInteger(taskId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
     if (!STATUSES.includes(status)) {
       return res.status(400).json({ message: "Invalid status." });
     }
 
-    const task = db
-      .prepare(
-        `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-         FROM work_tasks WHERE id = ? AND user_id = ?`,
-      )
-      .get(taskId, userId) as WorkTaskRow | undefined;
+    const existing = await db.query<WorkTaskRow>(
+      `SELECT id, user_id, title, status, sort_order, created_at, updated_at
+       FROM work_tasks WHERE id = $1 AND user_id = $2`,
+      [taskId, userId],
+    );
+    const task = existing.rows[0];
 
     if (!task) {
       return res.status(404).json({ message: "Task not found." });
@@ -111,39 +104,34 @@ export function createWorkRouter(db: Database.Database): Router {
       return res.json({ task });
     }
 
-    const sortOrder = nextSortOrder(db, userId, status);
-    const now = new Date().toISOString();
+    const sortOrder = await nextSortOrder(db, userId, status);
+    const now = new Date();
 
-    db.prepare(
+    const { rows } = await db.query<WorkTaskRow>(
       `UPDATE work_tasks
-       SET status = ?, sort_order = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
-    ).run(status, sortOrder, now, taskId, userId);
+       SET status = $1, sort_order = $2, updated_at = $3
+       WHERE id = $4 AND user_id = $5
+       RETURNING id, user_id, title, status, sort_order, created_at, updated_at`,
+      [status, sortOrder, now, taskId, userId],
+    );
 
-    const updated = db
-      .prepare(
-        `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-         FROM work_tasks WHERE id = ?`,
-      )
-      .get(taskId) as WorkTaskRow;
-
-    return res.json({ task: updated });
+    return res.json({ task: rows[0] });
   });
 
-  router.post("/tasks/:id/move-right", (req, res) => {
+  router.post("/tasks/:id/move-right", async (req, res) => {
     const taskId = Number(req.params.id);
     const userId = parseUserId(req.body?.userId);
 
-    if (!userId || !userExists(db, userId) || !Number.isInteger(taskId)) {
+    if (!userId || !(await userExists(db, userId)) || !Number.isInteger(taskId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    const task = db
-      .prepare(
-        `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-         FROM work_tasks WHERE id = ? AND user_id = ?`,
-      )
-      .get(taskId, userId) as WorkTaskRow | undefined;
+    const existing = await db.query<WorkTaskRow>(
+      `SELECT id, user_id, title, status, sort_order, created_at, updated_at
+       FROM work_tasks WHERE id = $1 AND user_id = $2`,
+      [taskId, userId],
+    );
+    const task = existing.rows[0];
 
     if (!task) {
       return res.status(404).json({ message: "Task not found." });
@@ -154,38 +142,34 @@ export function createWorkRouter(db: Database.Database): Router {
       return res.status(400).json({ message: "Task is already in Done." });
     }
 
-    const sortOrder = nextSortOrder(db, userId, next);
-    const now = new Date().toISOString();
+    const sortOrder = await nextSortOrder(db, userId, next);
+    const now = new Date();
 
-    db.prepare(
+    const { rows } = await db.query<WorkTaskRow>(
       `UPDATE work_tasks
-       SET status = ?, sort_order = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
-    ).run(next, sortOrder, now, taskId, userId);
+       SET status = $1, sort_order = $2, updated_at = $3
+       WHERE id = $4 AND user_id = $5
+       RETURNING id, user_id, title, status, sort_order, created_at, updated_at`,
+      [next, sortOrder, now, taskId, userId],
+    );
 
-    const updated = db
-      .prepare(
-        `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-         FROM work_tasks WHERE id = ?`,
-      )
-      .get(taskId) as WorkTaskRow;
-
-    return res.json({ task: updated });
+    return res.json({ task: rows[0] });
   });
 
-  router.delete("/tasks/:id", (req, res) => {
+  router.delete("/tasks/:id", async (req, res) => {
     const taskId = Number(req.params.id);
     const userId = parseUserId(req.query.userId);
 
-    if (!userId || !userExists(db, userId) || !Number.isInteger(taskId)) {
+    if (!userId || !(await userExists(db, userId)) || !Number.isInteger(taskId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    const info = db
-      .prepare("DELETE FROM work_tasks WHERE id = ? AND user_id = ?")
-      .run(taskId, userId);
+    const result = await db.query(
+      "DELETE FROM work_tasks WHERE id = $1 AND user_id = $2",
+      [taskId, userId],
+    );
 
-    if (info.changes === 0) {
+    if ((result.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: "Task not found." });
     }
 

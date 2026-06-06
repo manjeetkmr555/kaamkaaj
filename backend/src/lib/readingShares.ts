@@ -1,18 +1,17 @@
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 
-export function hasReadingViewAccess(
-  db: Database.Database,
+export async function hasReadingViewAccess(
+  db: Db,
   ownerUserId: number,
   viewerUserId: number,
-): boolean {
+): Promise<boolean> {
   if (ownerUserId === viewerUserId) return true;
 
-  const row = db
-    .prepare(
-      `SELECT id FROM reading_list_shares
-       WHERE owner_user_id = ? AND viewer_user_id = ?`,
-    )
-    .get(ownerUserId, viewerUserId) as { id: number } | undefined;
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM reading_list_shares
+     WHERE owner_user_id = $1 AND viewer_user_id = $2`,
+    [ownerUserId, viewerUserId],
+  );
 
-  return Boolean(row);
+  return rows.length > 0;
 }

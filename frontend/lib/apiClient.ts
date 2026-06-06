@@ -1,7 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export const API_UNAVAILABLE_MESSAGE =
-  "Cannot reach the server. Start the backend with: cd backend && npm run dev";
+  "Cannot reach the server. Please try again later.";
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   try {

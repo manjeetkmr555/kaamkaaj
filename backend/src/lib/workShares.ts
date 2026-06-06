@@ -1,34 +1,30 @@
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 
-export type WorkShareRow = {
-  id: number;
-  owner_user_id: number;
-  viewer_user_id: number;
-  created_at: string;
-};
-
-export function hasViewAccess(
-  db: Database.Database,
+export async function hasViewAccess(
+  db: Db,
   ownerUserId: number,
   viewerUserId: number,
-): boolean {
+): Promise<boolean> {
   if (ownerUserId === viewerUserId) return true;
 
-  const row = db
-    .prepare(
-      `SELECT id FROM work_tracker_shares
-       WHERE owner_user_id = ? AND viewer_user_id = ?`,
-    )
-    .get(ownerUserId, viewerUserId) as { id: number } | undefined;
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM work_tracker_shares
+     WHERE owner_user_id = $1 AND viewer_user_id = $2`,
+    [ownerUserId, viewerUserId],
+  );
 
-  return Boolean(row);
+  return rows.length > 0;
 }
 
-export function getUserByEmail(
-  db: Database.Database,
+export async function getUserByEmail(
+  db: Db,
   email: string,
-): { id: number; email: string } | undefined {
-  return db
-    .prepare("SELECT id, email FROM users WHERE email = ? COLLATE NOCASE")
-    .get(email.trim().toLowerCase()) as { id: number; email: string } | undefined;
+): Promise<{ id: number; email: string } | undefined> {
+  const normalized = email.trim().toLowerCase();
+  const { rows } = await db.query<{ id: number; email: string }>(
+    "SELECT id, email FROM users WHERE email = $1",
+    [normalized],
+  );
+
+  return rows[0];
 }

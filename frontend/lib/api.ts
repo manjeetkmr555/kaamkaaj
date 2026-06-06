@@ -9,7 +9,12 @@ type ApiError = {
 export { API_UNAVAILABLE_MESSAGE };
 
 export async function validateEmailOnServer(email: string) {
-  return parseJson<{ valid: boolean; email?: string; message?: string }>(
+  return parseJson<{
+    valid: boolean;
+    email?: string;
+    allowed?: boolean;
+    message?: string;
+  }>(
     await apiFetch("/api/auth/validate-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

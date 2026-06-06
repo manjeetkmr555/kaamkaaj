@@ -25,9 +25,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${dmSans.variable} ${sourceSerif.variable} h-full antialiased`}
+      className={`${dmSans.variable} ${sourceSerif.variable} min-h-full antialiased`}
     >
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full overflow-x-hidden">{children}</body>
     </html>
   );
 }

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 import {
   validateEmailDomainStructure,
   validateEmailFormat,
@@ -16,24 +16,25 @@ function parseUserId(value: unknown): number | null {
   return id;
 }
 
-function userExists(db: Database.Database, userId: number): boolean {
-  const row = db.prepare("SELECT id FROM users WHERE id = ?").get(userId) as
-    | { id: number }
-    | undefined;
-  return Boolean(row);
+async function userExists(db: Db, userId: number): Promise<boolean> {
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM users WHERE id = $1",
+    [userId],
+  );
+  return rows.length > 0;
 }
 
-export function createReadingSharesRouter(db: Database.Database): Router {
+export function createReadingSharesRouter(db: Db): Router {
   const router = Router();
 
-  router.post("/share", (req, res) => {
+  router.post("/share", async (req, res) => {
     const ownerUserId = parseUserId(req.body?.ownerUserId);
     const viewerEmail =
       typeof req.body?.viewerEmail === "string"
         ? req.body.viewerEmail.trim().toLowerCase()
         : "";
 
-    if (!ownerUserId || !userExists(db, ownerUserId)) {
+    if (!ownerUserId || !(await userExists(db, ownerUserId))) {
       return res.status(400).json({ message: "Invalid owner." });
     }
 
@@ -44,7 +45,7 @@ export function createReadingSharesRouter(db: Database.Database): Router {
       });
     }
 
-    const viewer = getUserByEmail(db, viewerEmail);
+    const viewer = await getUserByEmail(db, viewerEmail);
     if (!viewer) {
       return res.status(404).json({
         message: "No account found with that email. They need to sign up first.",
@@ -59,29 +60,28 @@ export function createReadingSharesRouter(db: Database.Database): Router {
       });
     }
 
-    const existing = db
-      .prepare(
-        `SELECT id FROM reading_list_shares
-         WHERE owner_user_id = ? AND viewer_user_id = ?`,
-      )
-      .get(ownerUserId, viewer.id) as { id: number } | undefined;
+    const existing = await db.query<{ id: number }>(
+      `SELECT id FROM reading_list_shares
+       WHERE owner_user_id = $1 AND viewer_user_id = $2`,
+      [ownerUserId, viewer.id],
+    );
 
-    if (existing) {
+    if (existing.rows.length > 0) {
       return res.status(409).json({
         message: "This reading list is already shared with that person.",
       });
     }
 
-    const info = db
-      .prepare(
-        `INSERT INTO reading_list_shares (owner_user_id, viewer_user_id)
-         VALUES (?, ?)`,
-      )
-      .run(ownerUserId, viewer.id);
+    const { rows } = await db.query<{ id: number }>(
+      `INSERT INTO reading_list_shares (owner_user_id, viewer_user_id)
+       VALUES ($1, $2)
+       RETURNING id`,
+      [ownerUserId, viewer.id],
+    );
 
     return res.status(201).json({
       share: {
-        id: Number(info.lastInsertRowid),
+        id: rows[0].id,
         ownerUserId,
         viewerEmail: viewer.email,
         viewerUserId: viewer.id,
@@ -90,26 +90,25 @@ export function createReadingSharesRouter(db: Database.Database): Router {
     });
   });
 
-  router.get("/shares/sent", (req, res) => {
+  router.get("/shares/sent", async (req, res) => {
     const userId = parseUserId(req.query.userId);
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
 
-    const rows = db
-      .prepare(
-        `SELECT s.id, s.viewer_user_id, s.created_at, u.email AS viewer_email
-         FROM reading_list_shares s
-         JOIN users u ON u.id = s.viewer_user_id
-         WHERE s.owner_user_id = ?
-         ORDER BY s.created_at DESC`,
-      )
-      .all(userId) as {
+    const { rows } = await db.query<{
       id: number;
       viewer_user_id: number;
-      created_at: string;
+      created_at: Date;
       viewer_email: string;
-    }[];
+    }>(
+      `SELECT s.id, s.viewer_user_id, s.created_at, u.email AS viewer_email
+       FROM reading_list_shares s
+       JOIN users u ON u.id = s.viewer_user_id
+       WHERE s.owner_user_id = $1
+       ORDER BY s.created_at DESC`,
+      [userId],
+    );
 
     return res.json({
       shares: rows.map((r) => ({
@@ -121,26 +120,25 @@ export function createReadingSharesRouter(db: Database.Database): Router {
     });
   });
 
-  router.get("/shares/received", (req, res) => {
+  router.get("/shares/received", async (req, res) => {
     const userId = parseUserId(req.query.userId);
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
 
-    const rows = db
-      .prepare(
-        `SELECT s.id, s.owner_user_id, s.created_at, u.email AS owner_email
-         FROM reading_list_shares s
-         JOIN users u ON u.id = s.owner_user_id
-         WHERE s.viewer_user_id = ?
-         ORDER BY s.created_at DESC`,
-      )
-      .all(userId) as {
+    const { rows } = await db.query<{
       id: number;
       owner_user_id: number;
-      created_at: string;
+      created_at: Date;
       owner_email: string;
-    }[];
+    }>(
+      `SELECT s.id, s.owner_user_id, s.created_at, u.email AS owner_email
+       FROM reading_list_shares s
+       JOIN users u ON u.id = s.owner_user_id
+       WHERE s.viewer_user_id = $1
+       ORDER BY s.created_at DESC`,
+      [userId],
+    );
 
     return res.json({
       shares: rows.map((r) => ({
@@ -152,63 +150,63 @@ export function createReadingSharesRouter(db: Database.Database): Router {
     });
   });
 
-  router.delete("/share/:id", (req, res) => {
+  router.delete("/share/:id", async (req, res) => {
     const shareId = Number(req.params.id);
     const ownerUserId = parseUserId(req.query.ownerUserId);
 
-    if (!ownerUserId || !userExists(db, ownerUserId) || !Number.isInteger(shareId)) {
+    if (!ownerUserId || !(await userExists(db, ownerUserId)) || !Number.isInteger(shareId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    const info = db
-      .prepare(
-        `DELETE FROM reading_list_shares WHERE id = ? AND owner_user_id = ?`,
-      )
-      .run(shareId, ownerUserId);
+    const result = await db.query(
+      `DELETE FROM reading_list_shares WHERE id = $1 AND owner_user_id = $2`,
+      [shareId, ownerUserId],
+    );
 
-    if (info.changes === 0) {
+    if ((result.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: "Share not found." });
     }
 
     return res.json({ message: "Share removed." });
   });
 
-  router.get("/shared", (req, res) => {
+  router.get("/shared", async (req, res) => {
     const ownerUserId = parseUserId(req.query.ownerUserId);
     const viewerUserId = parseUserId(req.query.viewerUserId);
 
     if (
       !ownerUserId ||
       !viewerUserId ||
-      !userExists(db, ownerUserId) ||
-      !userExists(db, viewerUserId)
+      !(await userExists(db, ownerUserId)) ||
+      !(await userExists(db, viewerUserId))
     ) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    if (!hasReadingViewAccess(db, ownerUserId, viewerUserId)) {
+    if (!(await hasReadingViewAccess(db, ownerUserId, viewerUserId))) {
       return res.status(403).json({
         message: "You do not have access to this reading list.",
       });
     }
 
-    const owner = db
-      .prepare("SELECT id, email FROM users WHERE id = ?")
-      .get(ownerUserId) as { id: number; email: string };
+    const { rows: ownerRows } = await db.query<{ id: number; email: string }>(
+      "SELECT id, email FROM users WHERE id = $1",
+      [ownerUserId],
+    );
+    const owner = ownerRows[0];
 
     const isOwner = viewerUserId === ownerUserId;
-    const items = db
-      .prepare(
-        `SELECT ${READING_ITEM_COLUMNS}
-         FROM reading_items
-         WHERE user_id = ? ${isOwner ? "" : "AND visible_to_shared = 1"}
-         ORDER BY sort_order ASC, id ASC`,
-      )
-      .all(ownerUserId) as ReadingItemRow[];
+    const { rows } = await db.query<ReadingItemRow>(
+      `SELECT ${READING_ITEM_COLUMNS}
+       FROM reading_items
+       WHERE user_id = $1 ${isOwner ? "" : "AND visible_to_shared = true"}
+       ORDER BY sort_order ASC, id ASC`,
+      [ownerUserId],
+    );
 
     return res.json({
       owner: { id: owner.id, email: owner.email },
-      items: items.map(mapReadingItem),
+      items: rows.map(mapReadingItem),
       readOnly: !isOwner,
     });
   });

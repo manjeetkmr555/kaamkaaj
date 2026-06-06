@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 import { generateReadingInsights } from "../lib/readingAi.js";
 import { mapReadingItem, READING_ITEM_COLUMNS } from "../lib/readingItems.js";
 import { fetchPageMeta, normalizeUrl } from "../lib/urlMeta.js";
@@ -10,10 +10,10 @@ export type ReadingItemRow = {
   url: string;
   category: string;
   summary: string;
-  visible_to_shared: number;
+  visible_to_shared: boolean;
   sort_order: number;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 };
 
 function parseUserId(value: unknown): number | null {
@@ -22,62 +22,62 @@ function parseUserId(value: unknown): number | null {
   return id;
 }
 
-function userExists(db: Database.Database, userId: number): boolean {
-  const row = db.prepare("SELECT id FROM users WHERE id = ?").get(userId) as
-    | { id: number }
-    | undefined;
-  return Boolean(row);
+async function userExists(db: Db, userId: number): Promise<boolean> {
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM users WHERE id = $1",
+    [userId],
+  );
+  return rows.length > 0;
 }
 
 const DUPLICATE_URL_MESSAGE = "This URL is already on your reading list.";
 
-function urlAlreadyExists(
-  db: Database.Database,
+async function urlAlreadyExists(
+  db: Db,
   userId: number,
   normalizedUrl: string,
-): boolean {
-  const rows = db
-    .prepare("SELECT url FROM reading_items WHERE user_id = ?")
-    .all(userId) as { url: string }[];
+): Promise<boolean> {
+  const { rows } = await db.query<{ url: string }>(
+    "SELECT url FROM reading_items WHERE user_id = $1",
+    [userId],
+  );
 
   return rows.some((row) => normalizeUrl(row.url) === normalizedUrl);
 }
 
-function nextSortOrder(db: Database.Database, userId: number): number {
-  const row = db
-    .prepare(
-      "SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM reading_items WHERE user_id = ?",
-    )
-    .get(userId) as { max_order: number };
-  return row.max_order + 1;
+async function nextSortOrder(db: Db, userId: number): Promise<number> {
+  const { rows } = await db.query<{ max_order: number }>(
+    "SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM reading_items WHERE user_id = $1",
+    [userId],
+  );
+  return rows[0].max_order + 1;
 }
 
-export function createReadingRouter(db: Database.Database): Router {
+export function createReadingRouter(db: Db): Router {
   const router = Router();
 
-  router.get("/items", (req, res) => {
+  router.get("/items", async (req, res) => {
     const userId = parseUserId(req.query.userId);
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
 
-    const items = db
-      .prepare(
-        `SELECT ${READING_ITEM_COLUMNS}
-         FROM reading_items
-         WHERE user_id = ?
-         ORDER BY sort_order ASC, id ASC`,
-      )
-      .all(userId) as ReadingItemRow[];
+    const { rows } = await db.query<ReadingItemRow>(
+      `SELECT ${READING_ITEM_COLUMNS}
+       FROM reading_items
+       WHERE user_id = $1
+       ORDER BY sort_order ASC, id ASC`,
+      [userId],
+    );
 
-    return res.json({ items: items.map(mapReadingItem) });
+    return res.json({ items: rows.map(mapReadingItem) });
   });
 
   router.post("/items", async (req, res) => {
     const userId = parseUserId(req.body?.userId);
     const rawUrl = typeof req.body?.url === "string" ? req.body.url : "";
 
-    if (!userId || !userExists(db, userId)) {
+    if (!userId || !(await userExists(db, userId))) {
       return res.status(400).json({ message: "Invalid user." });
     }
 
@@ -86,7 +86,7 @@ export function createReadingRouter(db: Database.Database): Router {
       return res.status(400).json({ message: "Please enter a valid public URL." });
     }
 
-    if (urlAlreadyExists(db, userId, url)) {
+    if (await urlAlreadyExists(db, userId, url)) {
       return res.status(409).json({
         message: DUPLICATE_URL_MESSAGE,
         field: "duplicate",
@@ -101,21 +101,20 @@ export function createReadingRouter(db: Database.Database): Router {
         meta.description,
       );
 
-      const sortOrder = nextSortOrder(db, userId);
-      const now = new Date().toISOString();
+      const sortOrder = await nextSortOrder(db, userId);
+      const now = new Date();
 
-      const info = db
-        .prepare(
-          `INSERT INTO reading_items (user_id, url, category, summary, sort_order, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .run(userId, url, insights.category, insights.summary, sortOrder, now);
+      const { rows } = await db.query<ReadingItemRow>(
+        `INSERT INTO reading_items (user_id, url, category, summary, sort_order, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING ${READING_ITEM_COLUMNS}`,
+        [userId, url, insights.category, insights.summary, sortOrder, now],
+      );
 
-      const item = db
-        .prepare(`SELECT ${READING_ITEM_COLUMNS} FROM reading_items WHERE id = ?`)
-        .get(Number(info.lastInsertRowid)) as ReadingItemRow;
-
-      return res.status(201).json({ item: mapReadingItem(item), aiGenerated: true });
+      return res.status(201).json({
+        item: mapReadingItem(rows[0]),
+        aiGenerated: true,
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not process this URL.";
@@ -123,81 +122,90 @@ export function createReadingRouter(db: Database.Database): Router {
     }
   });
 
-  router.put("/reorder", (req, res) => {
+  router.put("/reorder", async (req, res) => {
     const userId = parseUserId(req.body?.userId);
     const orderedIds = req.body?.orderedIds;
 
-    if (!userId || !userExists(db, userId) || !Array.isArray(orderedIds)) {
+    if (!userId || !(await userExists(db, userId)) || !Array.isArray(orderedIds)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
     const ids = orderedIds.map(Number).filter((id) => Number.isInteger(id));
-    const reorder = db.transaction((itemIds: number[]) => {
-      itemIds.forEach((id, index) => {
-        db.prepare(
-          `UPDATE reading_items SET sort_order = ?, updated_at = ?
-           WHERE id = ? AND user_id = ?`,
-        ).run(index, new Date().toISOString(), id, userId);
-      });
-    });
+    const client = await db.connect();
 
-    reorder(ids);
+    try {
+      await client.query("BEGIN");
+      for (const [index, id] of ids.entries()) {
+        await client.query(
+          `UPDATE reading_items SET sort_order = $1, updated_at = $2
+           WHERE id = $3 AND user_id = $4`,
+          [index, new Date(), id, userId],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
 
-    const items = db
-      .prepare(
-        `SELECT ${READING_ITEM_COLUMNS}
-         FROM reading_items
-         WHERE user_id = ?
-         ORDER BY sort_order ASC, id ASC`,
-      )
-      .all(userId) as ReadingItemRow[];
+    const { rows } = await db.query<ReadingItemRow>(
+      `SELECT ${READING_ITEM_COLUMNS}
+       FROM reading_items
+       WHERE user_id = $1
+       ORDER BY sort_order ASC, id ASC`,
+      [userId],
+    );
 
-    return res.json({ items: items.map(mapReadingItem) });
+    return res.json({ items: rows.map(mapReadingItem) });
   });
 
-  router.patch("/items/:id/visibility", (req, res) => {
+  router.patch("/items/:id/visibility", async (req, res) => {
     const itemId = Number(req.params.id);
     const userId = parseUserId(req.body?.userId);
 
-    if (!userId || !userExists(db, userId) || !Number.isInteger(itemId)) {
+    if (!userId || !(await userExists(db, userId)) || !Number.isInteger(itemId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    const item = db
-      .prepare(`SELECT ${READING_ITEM_COLUMNS} FROM reading_items WHERE id = ? AND user_id = ?`)
-      .get(itemId, userId) as ReadingItemRow | undefined;
+    const existing = await db.query<ReadingItemRow>(
+      `SELECT ${READING_ITEM_COLUMNS} FROM reading_items WHERE id = $1 AND user_id = $2`,
+      [itemId, userId],
+    );
+    const item = existing.rows[0];
 
     if (!item) {
       return res.status(404).json({ message: "Item not found." });
     }
 
-    const nextVisible = item.visible_to_shared ? 0 : 1;
-    const now = new Date().toISOString();
+    const nextVisible = !item.visible_to_shared;
+    const now = new Date();
 
-    db.prepare(
-      `UPDATE reading_items SET visible_to_shared = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
-    ).run(nextVisible, now, itemId, userId);
+    const { rows } = await db.query<ReadingItemRow>(
+      `UPDATE reading_items SET visible_to_shared = $1, updated_at = $2
+       WHERE id = $3 AND user_id = $4
+       RETURNING ${READING_ITEM_COLUMNS}`,
+      [nextVisible, now, itemId, userId],
+    );
 
-    const updated = db
-      .prepare(`SELECT ${READING_ITEM_COLUMNS} FROM reading_items WHERE id = ?`)
-      .get(itemId) as ReadingItemRow;
-
-    return res.json({ item: mapReadingItem(updated) });
+    return res.json({ item: mapReadingItem(rows[0]) });
   });
 
-  router.delete("/items/:id", (req, res) => {
+  router.delete("/items/:id", async (req, res) => {
     const itemId = Number(req.params.id);
     const userId = parseUserId(req.query.userId);
 
-    if (!userId || !userExists(db, userId) || !Number.isInteger(itemId)) {
+    if (!userId || !(await userExists(db, userId)) || !Number.isInteger(itemId)) {
       return res.status(400).json({ message: "Invalid request." });
     }
 
-    const info = db
-      .prepare("DELETE FROM reading_items WHERE id = ? AND user_id = ?")
-      .run(itemId, userId);
+    const result = await db.query(
+      "DELETE FROM reading_items WHERE id = $1 AND user_id = $2",
+      [itemId, userId],
+    );
 
-    if (info.changes === 0) {
+    if ((result.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: "Item not found." });
     }
 

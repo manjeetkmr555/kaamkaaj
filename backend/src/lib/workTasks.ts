@@ -1,20 +1,19 @@
-import type Database from "better-sqlite3";
+import type { Db } from "../db.js";
 import type { WorkStatus, WorkTaskRow } from "../types/work.js";
 
 const STATUSES: WorkStatus[] = ["todo", "progress", "done"];
 
-export function fetchTasksByUser(
-  db: Database.Database,
+export async function fetchTasksByUser(
+  db: Db,
   userId: number,
-): Record<WorkStatus, WorkTaskRow[]> {
-  const rows = db
-    .prepare(
-      `SELECT id, user_id, title, status, sort_order, created_at, updated_at
-       FROM work_tasks
-       WHERE user_id = ?
-       ORDER BY status, sort_order ASC, id ASC`,
-    )
-    .all(userId) as WorkTaskRow[];
+): Promise<Record<WorkStatus, WorkTaskRow[]>> {
+  const { rows } = await db.query<WorkTaskRow>(
+    `SELECT id, user_id, title, status, sort_order, created_at, updated_at
+     FROM work_tasks
+     WHERE user_id = $1
+     ORDER BY status, sort_order ASC, id ASC`,
+    [userId],
+  );
 
   return STATUSES.reduce(
     (acc, status) => {

@@ -1,4 +1,4 @@
-export type StoredUser = { id: number; email: string };
+export type StoredUser = { id: number; email: string; isAdmin?: boolean };
 
 export const SESSION_KEY = "kaamkaaj_user";
 

@@ -6,10 +6,14 @@ import {
   INVALID_EMAIL_MESSAGE,
   validateEmailClient,
 } from "@/lib/emailValidation";
+import { BrandLockup } from "@/components/BrandLockup";
 import { loginUser, registerUser, validateEmailOnServer, type ApiError } from "@/lib/api";
 import { SESSION_KEY } from "@/lib/session";
 
 type AuthMode = "login" | "register";
+
+const NOT_ALLOWED_MESSAGE =
+  "This email is not authorized to create an account. Contact your administrator.";
 
 export function AuthForm() {
   const router = useRouter();
@@ -18,6 +22,7 @@ export function AuthForm() {
   const [password, setPassword] = useState("");
   const [emailWarning, setEmailWarning] = useState<string | null>(null);
   const [emailValid, setEmailValid] = useState(false);
+  const [emailAllowed, setEmailAllowed] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
@@ -29,12 +34,14 @@ export function AuthForm() {
     if (!trimmed) {
       setEmailWarning(null);
       setEmailValid(false);
+      setEmailAllowed(false);
       return false;
     }
 
     if (!result.valid) {
       setEmailWarning(result.message ?? INVALID_EMAIL_MESSAGE);
       setEmailValid(false);
+      setEmailAllowed(false);
       return false;
     }
 
@@ -43,10 +50,25 @@ export function AuthForm() {
     return true;
   }
 
+  async function runServerEmailCheck(value: string, authMode: AuthMode) {
+    const result = await validateEmailOnServer(value);
+    setEmailValid(true);
+    setEmailAllowed(Boolean(result.allowed));
+
+    if (authMode === "register" && !result.allowed) {
+      setEmailWarning(NOT_ALLOWED_MESSAGE);
+      return false;
+    }
+
+    setEmailWarning(null);
+    return true;
+  }
+
   async function handleEmailBlur() {
     setTouched((t) => ({ ...t, email: true }));
     if (!email.trim()) {
       setEmailValid(false);
+      setEmailAllowed(false);
       return;
     }
 
@@ -54,12 +76,11 @@ export function AuthForm() {
     if (!clientOk) return;
 
     try {
-      await validateEmailOnServer(email);
-      setEmailValid(true);
-      setEmailWarning(null);
+      await runServerEmailCheck(email, mode);
     } catch (err) {
       const apiErr = err as ApiError;
       setEmailValid(false);
+      setEmailAllowed(false);
       if (apiErr.field !== "network") {
         setEmailWarning(apiErr.message ?? INVALID_EMAIL_MESSAGE);
       }
@@ -72,10 +93,14 @@ export function AuthForm() {
     if (!value.trim()) {
       setEmailWarning(null);
       setEmailValid(false);
+      setEmailAllowed(false);
       return;
     }
-    if (touched.email || emailWarning || emailValid) {
-      runClientEmailCheck(value);
+    if (touched.email || emailWarning || emailValid || emailAllowed) {
+      const clientOk = runClientEmailCheck(value);
+      if (clientOk) {
+        setEmailAllowed(false);
+      }
     }
   }
 
@@ -92,10 +117,15 @@ export function AuthForm() {
     setIsSubmitting(true);
 
     try {
-      await validateEmailOnServer(email);
+      const serverOk = await runServerEmailCheck(email, mode);
+      if (!serverOk) {
+        setIsSubmitting(false);
+        return;
+      }
     } catch (err) {
       const apiErr = err as ApiError;
       setEmailValid(false);
+      setEmailAllowed(false);
       if (apiErr.field === "network") {
         setFormError(apiErr.message ?? "Cannot reach the server.");
       } else {
@@ -129,10 +159,8 @@ export function AuthForm() {
   return (
     <div className="auth-card w-full max-w-md">
       <div className="mb-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-800/70">
-          KaamKaaj
-        </p>
-        <h1 className="mt-2 font-serif text-3xl text-stone-900">
+        <BrandLockup />
+        <h1 className="auth-title">
           {mode === "login" ? "Welcome back" : "Create your account"}
         </h1>
         <p className="mt-2 text-sm text-stone-600">
@@ -154,6 +182,14 @@ export function AuthForm() {
             onClick={() => {
               setMode(tab);
               setFormError(null);
+              if (tab === "register" && emailValid && email.trim()) {
+                void runServerEmailCheck(email, "register").catch(() => {
+                  setEmailAllowed(false);
+                });
+              }
+              if (tab === "login") {
+                setEmailWarning(null);
+              }
             }}
             className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               mode === tab
@@ -173,8 +209,19 @@ export function AuthForm() {
           </label>
           <div className="field-input-wrap">
             {emailValid ? (
-              <span className="field-input-tick" aria-hidden="true">
+              <span
+                className="field-input-tick field-input-tick--valid field-input-tick--left"
+                aria-hidden="true"
+              >
                 <EmailValidTick />
+              </span>
+            ) : null}
+            {mode === "register" && emailAllowed ? (
+              <span
+                className="field-input-tick field-input-tick--allowed field-input-tick--right"
+                aria-hidden="true"
+              >
+                <EmailAllowedTick />
               </span>
             ) : null}
             <input
@@ -185,8 +232,8 @@ export function AuthForm() {
               value={email}
               onChange={(e) => handleEmailChange(e.target.value)}
               onBlur={handleEmailBlur}
-              className={`field-input ${
-                emailValid ? "field-input--valid field-input--with-tick" : ""
+              className={`field-input ${emailValid ? "field-input--tick-left field-input--valid" : ""} ${
+                mode === "register" && emailAllowed ? "field-input--tick-right" : ""
               } ${emailWarning ? "field-input--error" : ""}`}
               placeholder="you@company.com"
               aria-invalid={Boolean(emailWarning)}
@@ -205,11 +252,17 @@ export function AuthForm() {
             </p>
           ) : emailValid ? (
             <p id="email-valid" className="field-valid">
-              Email looks good.
+              {mode === "register" && emailAllowed
+                ? "Email is valid and authorized to register."
+                : mode === "register"
+                  ? "Email looks valid. Checking authorization…"
+                  : "Email looks good."}
             </p>
           ) : (
             <p id="email-hint" className="field-hint">
-              We check format and that the email domain exists.
+              {mode === "register"
+                ? "We check format, domain, and registration authorization."
+                : "We check format and that the email domain exists."}
             </p>
           )}
         </div>
@@ -241,7 +294,7 @@ export function AuthForm() {
           </p>
         ) : null}
 
-        <button type="submit" disabled={isSubmitting} className="primary-button">
+        <button type="submit" disabled={isSubmitting} className="auth-submit-button">
           {isSubmitting
             ? "Checking…"
             : mode === "login"
@@ -258,6 +311,27 @@ export function AuthForm() {
 }
 
 function EmailValidTick() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 18 18"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle cx="9" cy="9" r="9" fill="currentColor" fillOpacity="0.12" />
+      <path
+        d="M5.25 9.25L7.75 11.75L12.75 6.75"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function EmailAllowedTick() {
   return (
     <svg
       width="18"
