@@ -7,7 +7,7 @@ KaamKaaj is a personal productivity web app with email/password authentication. 
 - **Authentication** — Register and sign in with a verified email and password (minimum 8 characters).
 - **Registration allowlist** — Only emails on the allowlist can create an account. Admins manage the list from the admin UI.
 - **Work Tracker** — Create tasks, move them between *To do*, *In progress*, and *Done*, and reorder within each column.
-- **Reading List** — Paste a URL; the backend fetches page metadata and generates a short category and summary (OpenAI optional).
+- **Reading List** — Paste a URL; the backend fetches page metadata and generates a short category and summary (Anthropic).
 - **Sharing** — Share your work tracker or reading list with another registered user by email.
 - **Admin panel** — Admin users can add or remove emails from the registration allowlist.
 
@@ -115,7 +115,7 @@ FRONTEND_PORT=3000 docker compose up --build
 Pass secrets via environment or a `.env` file in the project root:
 
 ```bash
-ADMIN_EMAIL=you@example.com OPENAI_API_KEY=sk-... docker compose up --build
+ADMIN_EMAIL=you@example.com ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 ```
 
 ## Environment variables
@@ -128,8 +128,8 @@ ADMIN_EMAIL=you@example.com OPENAI_API_KEY=sk-... docker compose up --build
 | `PORT`            | No       | API port (default `4000`) |
 | `FRONTEND_ORIGIN` | Prod     | Comma-separated allowed CORS origins (e.g. `https://app.example.com`) |
 | `ADMIN_EMAIL`     | Yes*     | Email granted admin role and allowlist entry after registration |
-| `OPENAI_API_KEY`  | No       | Enables AI category/summary for reading items |
-| `OPENAI_MODEL`    | No       | OpenAI model (default `gpt-4o-mini`) |
+| `ANTHROPIC_API_KEY`  | No       | Enables AI category/summary for reading items |
+| `ANTHROPIC_MODEL`    | No       | Anthropic model (default `claude-sonnet-4-20250514`) |
 | `NODE_ENV`        | Prod     | Set to `production` in production |
 
 \* Required for the first admin user. Without it, no one can manage the allowlist until an admin is set manually in the database.
@@ -203,8 +203,8 @@ Emails not on the allowlist return: *"This email is not authorized to create an 
 When adding a reading item by URL, the backend:
 
 1. Fetches the page and extracts title/description metadata.
-2. Generates a **1–3 word category** and **short summary** using OpenAI if `OPENAI_API_KEY` is set.
-3. Falls back to metadata-based heuristics when OpenAI is not configured.
+2. Generates a **1–3 word category** and **short summary** using Anthropic if `ANTHROPIC_API_KEY` is set.
+3. Falls back to metadata-based heuristics when Anthropic is not configured.
 
 ## API overview
 

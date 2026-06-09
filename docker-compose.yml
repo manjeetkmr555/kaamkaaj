@@ -28,8 +28,8 @@ services:
       DATABASE_URL: postgresql://kaamkaaj:kaamkaaj@database:5432/kaamkaaj
       FRONTEND_ORIGIN: http://localhost:3000,http://localhost:3002
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
     depends_on:
       database:
         condition: service_healthy
