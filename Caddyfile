@@ -1,0 +1,17 @@
+# Phase A: test via http://<lightsail_static_ip> before DNS is ready.
+# After DNS points to this server, replace :80 with your domain (see aws-installation.MD).
+app.aetherai.in {
+  encode gzip
+
+  handle /api/* {
+    reverse_proxy backend:4000
+  }
+
+  handle /health {
+    reverse_proxy backend:4000
+  }
+
+  handle {
+    reverse_proxy frontend:3000
+  }
+}
