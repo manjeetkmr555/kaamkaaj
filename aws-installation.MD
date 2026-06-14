@@ -65,10 +65,32 @@ docker compose version
 
 ## 3) Clone project
 
+This repo is **private** — you must authenticate before cloning.
+
+**Option A: SSH (recommended for the server)**
+
+Generate a key on the Lightsail instance, add the public key to GitHub
+(**Settings → SSH and GPG keys** or as a **deploy key** on the repo), then:
+
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:manjeetkmr555/kaamkaaj.git
 cd kaamkaaj
 ```
+
+**Option B: HTTPS with a Personal Access Token**
+
+Create a [GitHub Personal Access Token](https://github.com/settings/tokens) with
+`repo` scope. Clone with:
+
+```bash
+git clone https://github.com/manjeetkmr555/kaamkaaj.git
+cd kaamkaaj
+```
+
+When prompted, use your GitHub username and the token as the password.
+
+**Do not use your GitHub account password** — GitHub no longer accepts it for Git
+over HTTPS.
 
 ## 4) Create production environment file
 
@@ -88,74 +110,20 @@ Notes:
 - Keep `ADMIN_EMAIL` as the first admin account email.
 - Leave `ANTHROPIC_API_KEY` empty if you do not want AI summary/category generation.
 
-## 5) Create production Docker Compose file
+## 5) Production Docker Compose file
 
-Create `docker-compose.prod.yml` in the `kaamkaaj` directory:
+`docker-compose.prod.yml` is already in the repo. Add these to `.env.prod` (replace
+placeholders with your values):
 
-```yaml
-services:
-  database:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    environment:
-      PORT: 4000
-      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@database:5432/${DB_NAME}
-      FRONTEND_ORIGIN: https://app.yourdomain.com
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
-      NODE_ENV: production
-    depends_on:
-      - database
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: https://app.yourdomain.com
-    environment:
-      NEXT_PUBLIC_API_URL: https://app.yourdomain.com
-      NODE_ENV: production
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-      - backend
-    restart: unless-stopped
-
-volumes:
-  pg_data:
-  caddy_data:
-  caddy_config:
+```env
+FRONTEND_ORIGIN=http://<lightsail_static_ip>
+NEXT_PUBLIC_API_URL=http://<lightsail_static_ip>
 ```
 
+After DNS is ready, change both to `https://app.yourdomain.com` and rebuild the
+frontend (see Phase B below).
+
 Important:
-- Replace `app.yourdomain.com` with your actual domain.
 - This file intentionally does not expose backend port `4000`.
 - This file intentionally does not expose database port `5432`.
 - Do not add `ports:` under `backend` or `database`.
@@ -166,37 +134,19 @@ Use this in two phases so there is no confusion.
 
 ### Phase A: Before DNS is pointed (temporary HTTP test)
 
-Create `Caddyfile` in the `kaamkaaj` directory with:
-
-```caddy
-:80 {
-  encode gzip
-
-  handle /api/* {
-    reverse_proxy backend:4000
-  }
-
-  handle /health {
-    reverse_proxy backend:4000
-  }
-
-  handle {
-    reverse_proxy frontend:3000
-  }
-}
-```
+`Caddyfile` is already in the repo (listens on `:80`). **Do not paste its contents
+into the terminal** — bash will try to run `handle`, `reverse_proxy`, etc. as
+commands. The file is used by the Caddy container via `docker-compose.prod.yml`.
 
 With this, you can test from browser using:
 
 - `http://<lightsail_static_ip>`
 - `http://<lightsail_static_ip>/health`
 
-For this temporary phase, set frontend API URL to static IP in
-`docker-compose.prod.yml` before first build:
+For this temporary phase, set `NEXT_PUBLIC_API_URL` and `FRONTEND_ORIGIN` in
+`.env.prod` to `http://<lightsail_static_ip>` before the first build.
 
-- `NEXT_PUBLIC_API_URL: http://<lightsail_static_ip>`
-
-After DNS is ready, change it back to your domain (next section) and rebuild.
+After DNS is ready, change both to your domain (next section) and rebuild.
 
 ### Phase B: After GoDaddy DNS record is added (domain + HTTPS)
 
@@ -320,6 +270,12 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 ## Troubleshooting
 
+- `Invalid username or token` / `Password authentication is not supported`:
+  - GitHub no longer accepts account passwords for `git clone`/`git pull`.
+  - This repo is private — use SSH or a Personal Access Token with `repo` scope.
+- `:80: command not found` / `handle: command not found`:
+  - You pasted `Caddyfile` contents into the shell. Edit the file instead:
+    `nano Caddyfile` (or `git pull` — the file is in the repo).
 - Frontend loads but API fails:
   - Verify `NEXT_PUBLIC_API_URL` is `https://app.yourdomain.com`
   - Verify Caddy route for `/api/*`
