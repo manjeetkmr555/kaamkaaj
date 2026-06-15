@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_BASE = "";
 
 export const API_UNAVAILABLE_MESSAGE =
   "Cannot reach the server. Please try again later.";

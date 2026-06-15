@@ -1,40 +1,24 @@
 services:
   database:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+    image: ${DOCKERHUB_USERNAME}/kaamkaaj-database:latest
+    env_file:
+      - env/database.prod.env
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     restart: unless-stopped
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    environment:
-      PORT: 4000
-      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@database:5432/${DB_NAME}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
-      NODE_ENV: production
+    image: ${DOCKERHUB_USERNAME}/kaamkaaj-backend:latest
+    env_file:
+      - env/backend.prod.env
     depends_on:
       - database
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://3.6.198.213}
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://3.6.198.213}
-      NODE_ENV: production
+    image: ${DOCKERHUB_USERNAME}/kaamkaaj-frontend:latest
+    env_file:
+      - env/frontend.prod.env
     depends_on:
       - backend
     restart: unless-stopped
