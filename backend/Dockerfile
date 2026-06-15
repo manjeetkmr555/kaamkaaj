@@ -19,9 +19,6 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/backend/dist ./dist
 COPY database/schema.sql /app/database/schema.sql
 
-ENV DATABASE_URL=postgresql://kaamkaaj:kaamkaaj@database:5432/kaamkaaj
-ENV PORT=4000
-
 EXPOSE 4000
 
 CMD ["node", "dist/index.js"]

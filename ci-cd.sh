@@ -7,7 +7,7 @@ HOST_IP="3.6.198.213"
 SSH_USER="ubuntu"
 REMOTE_DIR="~/kaamkaaj"
 GIT_BRANCH="main"
-COMPOSE_CMD="docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build"
+COMPOSE_CMD="docker compose --env-file .env.prod -f docker-compose.prod.yml pull && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d"
 
 chmod 400 "$PEM_FILE"
 
