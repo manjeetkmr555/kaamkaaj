@@ -1,8 +1,8 @@
 services:
   database:
     build:
-      context: ./database
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: database/Dockerfile
     image: kaamkaaj-database:latest
     env_file:
       - env/database.env
@@ -32,8 +32,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     image: kaamkaaj-frontend:latest
     env_file:
       - env/frontend.env

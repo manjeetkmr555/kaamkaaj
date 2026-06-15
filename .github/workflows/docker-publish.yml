@@ -22,12 +22,12 @@ jobs:
             dockerfile: ./backend/Dockerfile
             image: kaamkaaj-backend
           - name: frontend
-            context: ./frontend
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: ./frontend/Dockerfile
             image: kaamkaaj-frontend
           - name: database
-            context: ./database
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: ./database/Dockerfile
             image: kaamkaaj-database
 
     steps:
