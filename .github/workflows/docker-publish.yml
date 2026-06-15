@@ -19,7 +19,7 @@ jobs:
         include:
           - name: backend
             context: .
-            dockerfile: backend/Dockerfile
+            dockerfile: ./backend/Dockerfile
             image: kaamkaaj-backend
           - name: frontend
             context: ./frontend
