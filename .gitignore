@@ -5,6 +5,8 @@ dist/
 .env
 .env.local
 .env.prod
+env/*.env
+!env/*.env.example
 backend/.env
 frontend/.env
 database/*.db
