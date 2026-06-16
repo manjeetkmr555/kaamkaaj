@@ -36,6 +36,52 @@ public domain, but they cannot directly reach `backend:4000` or your database.
 - Domain name you control
 - Git repository URL for this project
 - SSH access to the instance
+- Docker Hub account with `kaamkaaj-backend`, `kaamkaaj-frontend`, and `kaamkaaj-database` images
+
+## Continuous deployment (GitHub → Docker Hub → Lightsail)
+
+On every push to `main`, GitHub Actions:
+
+1. Builds and pushes Docker images to Docker Hub (`docker-publish.yml`).
+2. SSHs into your Lightsail instance, pulls the latest compose config from Git, pulls new images, and restarts containers.
+
+### One-time GitHub setup
+
+In your repo: **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Value |
+| ------ | ----- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username |
+| `DOCKERHUB_PAT` | Docker Hub access token ([Account Settings → Security](https://hub.docker.com/settings/security)) |
+| `LIGHTSAIL_HOST` | Lightsail static IP (e.g. `3.6.198.213`) |
+| `LIGHTSAIL_USER` | SSH user (usually `ubuntu`) |
+| `LIGHTSAIL_SSH_KEY` | Full contents of your Lightsail private key PEM file |
+
+### One-time server setup
+
+On Lightsail, ensure `~/kaamkaaj/.env.prod` includes your Docker Hub username (compose uses it for image names):
+
+```env
+DOCKERHUB_USERNAME=your_dockerhub_username
+```
+
+If your Docker Hub images are **private**, log in once on the server:
+
+```bash
+docker login
+```
+
+Public images do not require `docker login` on the server.
+
+### Manual deploy (optional)
+
+From your laptop, you can deploy without pushing code:
+
+```bash
+./ci-cd.sh
+```
+
+This SSHs to Lightsail and runs the same `git pull` + `docker compose pull` + `up -d` steps.
 
 ## 1) Create Lightsail instance
 
