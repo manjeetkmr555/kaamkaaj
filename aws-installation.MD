@@ -56,6 +56,81 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 | `LIGHTSAIL_HOST` | Lightsail static IP (e.g. `3.6.198.213`) |
 | `LIGHTSAIL_USER` | SSH user (usually `ubuntu`) |
 | `LIGHTSAIL_SSH_KEY` | Full contents of your Lightsail private key PEM file |
+| `AWS_ROLE_ARN` | IAM role ARN for GitHub OIDC (see below) |
+
+Optional repository variable: `AWS_REGION` (defaults to `ap-south-1` in the workflow).
+
+### Test pipeline: OIDC role → list Lightsail instances
+
+Workflow: `.github/workflows/aws-lightsail-test.yml`
+
+This uses GitHub Actions OIDC (same `AssumeRoleWithWebIdentity` mechanism as EKS IRSA) to assume an IAM role and run `aws lightsail get-instances`. Trigger manually from **Actions → Test AWS Lightsail Access → Run workflow**, or push changes to that workflow file on `main`.
+
+#### 1) Create the GitHub OIDC provider (once per AWS account)
+
+In IAM → **Identity providers → Add provider**:
+
+- Provider type: **OpenID Connect**
+- Provider URL: `https://token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+
+Or with the CLI:
+
+```bash
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com \
+  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+```
+
+#### 2) Create the IAM role trust policy
+
+Replace `ACCOUNT_ID` with your AWS account ID. The `sub` condition scopes the role to this repository only.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:manjeetkmr555/kaamkaaj:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### 3) Attach a Lightsail read policy to the role
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lightsail:GetInstances",
+        "lightsail:GetInstance"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### 4) Add the role ARN to GitHub
+
+Copy the role ARN (e.g. `arn:aws:iam::123456789012:role/github-lightsail-read`) into the `AWS_ROLE_ARN` repository secret.
 
 ### One-time server setup
 

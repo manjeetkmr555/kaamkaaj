@@ -1,0 +1,43 @@
+name: Test AWS Lightsail Access
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/aws-lightsail-test.yml
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: aws-lightsail-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  list-lightsail-instances:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+
+      - name: Verify assumed role identity
+        run: aws sts get-caller-identity
+
+      - name: List Lightsail instances
+        run: |
+          set -euo pipefail
+          instances="$(aws lightsail get-instances --query 'instances[*].[name,state.name,publicIpAddress,privateIpAddress]' --output text)"
+
+          if [ -z "$instances" ]; then
+            echo "No Lightsail instances found in ${{ vars.AWS_REGION || 'ap-south-1' }}."
+            exit 0
+          fi
+
+          echo "Lightsail instances:"
+          printf '%s\n' "$instances" | column -t -s $'\t'
