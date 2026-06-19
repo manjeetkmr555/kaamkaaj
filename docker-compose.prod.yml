@@ -1,5 +1,6 @@
 services:
   database:
+    platform: linux/amd64
     image: ${DOCKERHUB_USERNAME}/kaamkaaj-database:latest
     env_file:
       - env/database.prod.env
@@ -8,6 +9,7 @@ services:
     restart: unless-stopped
 
   backend:
+    platform: linux/amd64
     image: ${DOCKERHUB_USERNAME}/kaamkaaj-backend:latest
     env_file:
       - env/backend.prod.env
@@ -16,6 +18,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    platform: linux/amd64
     image: ${DOCKERHUB_USERNAME}/kaamkaaj-frontend:latest
     env_file:
       - env/frontend.prod.env
