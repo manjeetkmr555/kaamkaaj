@@ -108,9 +108,11 @@ export default function WorkTrackerPage() {
 
       <WorkBoard
         board={board}
-        onAddTask={async (title) => {
-          const { task } = await createWorkTask(userId, title);
-          setBoard((prev) => ({ ...prev, todo: [...prev.todo, task] }));
+        onAddTask={async (title, status) => {
+          // pass the column status so the backend saves it in the right column
+          const { task } = await createWorkTask(userId, title, status);
+          // add the returned task to whichever column it belongs to
+          setBoard((prev) => ({ ...prev, [status]: [...prev[status], task] }));
           setError(null);
         }}
         onMoveTask={async (taskId, fromStatus, toStatus) => {
