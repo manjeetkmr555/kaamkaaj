@@ -12,3 +12,4 @@ frontend/.env
 database/*.db
 database/*.db-*
 *.pem
+env/
