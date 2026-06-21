@@ -5,7 +5,7 @@ services:
       dockerfile: database/Dockerfile
     image: kaamkaaj-database:latest
     env_file:
-      - env/database.env
+      - .env
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
@@ -23,7 +23,7 @@ services:
       dockerfile: backend/Dockerfile
     image: kaamkaaj-backend:latest
     env_file:
-      - env/backend.env
+      - .env
     ports:
       - "4000:4000"
     depends_on:
@@ -36,7 +36,7 @@ services:
       dockerfile: frontend/Dockerfile
     image: kaamkaaj-frontend:latest
     env_file:
-      - env/frontend.env
+      - .env
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
