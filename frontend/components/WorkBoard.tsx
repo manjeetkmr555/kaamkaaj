@@ -14,7 +14,8 @@ const DRAG_TYPE = "application/x-kaamkaaj-task";
 type WorkBoardProps = {
   board: WorkBoardData;
   readOnly?: boolean;
-  onAddTask?: (title: string) => Promise<void>;
+  // now receives the column status so we know where the task was added
+  onAddTask?: (title: string, status: WorkStatus) => Promise<void>;
   onMoveTask?: (
     taskId: number,
     fromStatus: WorkStatus,
@@ -30,20 +31,27 @@ export function WorkBoard({
   onMoveTask,
   onDeleteTask,
 }: WorkBoardProps) {
-  const [newTitle, setNewTitle] = useState("");
+  // one input value and loading state per column (keyed by status)
+  const [newTitles, setNewTitles] = useState<Record<WorkStatus, string>>({
+    todo: "",
+    progress: "",
+    done: "",
+  });
+  const [adding, setAdding] = useState<WorkStatus | null>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<WorkStatus | null>(null);
-  const [adding, setAdding] = useState(false);
 
-  async function handleAddTask(event: FormEvent) {
+  // called when the user submits the add-task form in any column
+  async function handleAddTask(event: FormEvent, status: WorkStatus) {
     event.preventDefault();
-    if (!onAddTask || !newTitle.trim()) return;
-    setAdding(true);
+    const title = newTitles[status].trim();
+    if (!onAddTask || !title) return;
+    setAdding(status); // mark this column as loading
     try {
-      await onAddTask(newTitle.trim());
-      setNewTitle("");
+      await onAddTask(title, status); // pass both title and the column status
+      setNewTitles((prev) => ({ ...prev, [status]: "" })); // clear only this column's input
     } finally {
-      setAdding(false);
+      setAdding(null);
     }
   }
 
@@ -97,20 +105,23 @@ export function WorkBoard({
             <span className="work-column__count">{board[status].length}</span>
           </header>
 
-          {!readOnly && status === "todo" ? (
-            <form onSubmit={handleAddTask} className="work-add-form">
+          {!readOnly ? (
+            // show an add form in every column, not just "todo"
+            <form onSubmit={(e) => handleAddTask(e, status)} className="work-add-form">
               <input
                 type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
+                value={newTitles[status]}
+                onChange={(e) =>
+                  setNewTitles((prev) => ({ ...prev, [status]: e.target.value }))
+                }
                 placeholder="New task title…"
                 className="field-input text-sm"
                 maxLength={500}
               />
               <button
                 type="submit"
-                className="work-float-btn work-float-btn--todo work-float-btn--compact"
-                disabled={!newTitle.trim() || adding}
+                className={`work-float-btn work-float-btn--${status} work-float-btn--compact`}
+                disabled={!newTitles[status].trim() || adding === status}
               >
                 Add
               </button>
