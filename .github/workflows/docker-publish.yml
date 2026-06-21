@@ -72,6 +72,25 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Write env files to Lightsail
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          BACKEND_PROD_ENV: ${{ secrets.BACKEND_PROD_ENV }}
+          DATABASE_PROD_ENV: ${{ secrets.DATABASE_PROD_ENV }}
+          FRONTEND_PROD_ENV: ${{ secrets.FRONTEND_PROD_ENV }}
+          DOTENV_PROD: ${{ secrets.DOTENV_PROD }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: BACKEND_PROD_ENV,DATABASE_PROD_ENV,FRONTEND_PROD_ENV,DOTENV_PROD
+          script: |
+            mkdir -p ~/kaamkaaj/env
+            printf '%s' "$BACKEND_PROD_ENV"  > ~/kaamkaaj/env/backend.prod.env
+            printf '%s' "$DATABASE_PROD_ENV" > ~/kaamkaaj/env/database.prod.env
+            printf '%s' "$FRONTEND_PROD_ENV" > ~/kaamkaaj/env/frontend.prod.env
+            printf '%s' "$DOTENV_PROD"       > ~/kaamkaaj/.env.prod
+
       - name: Deploy to Lightsail
         uses: appleboy/ssh-action@v1.2.0
         with:
