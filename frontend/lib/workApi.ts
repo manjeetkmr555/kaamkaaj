@@ -20,12 +20,16 @@ export async function fetchWorkTasks(userId: number) {
   );
 }
 
-export async function createWorkTask(userId: number, title: string) {
+export async function createWorkTask(
+  userId: number,
+  title: string,
+  status: WorkStatus = "todo", // which column to add the task into
+) {
   return parseJson<{ task: WorkTask }>(
     await apiFetch("/api/work/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, title }),
+      body: JSON.stringify({ userId, title, status }), // send status to backend
     }),
   );
 }

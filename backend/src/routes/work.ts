@@ -65,13 +65,22 @@ export function createWorkRouter(db: Db): Router {
     if (!title || title.length > 500) {
       return res.status(400).json({ message: "Task title is required." });
     }
+    
+    // Read the status value sent by the client (e.g. "todo", "progress", "done")
+    const requestedStatus = req.body?.status;
 
-    const sortOrder = await nextSortOrder(db, userId, "todo");
+    // Check if the provided status is one of the allowed values
+    const isValidStatus = STATUSES.includes(requestedStatus);
+
+    // Use the requested status if valid, otherwise fall back to "todo"
+    const status: WorkStatus = isValidStatus ? requestedStatus : "todo";
+
+    const sortOrder = await nextSortOrder(db, userId, status);
     const { rows } = await db.query<WorkTaskRow>(
       `INSERT INTO work_tasks (user_id, title, status, sort_order)
-       VALUES ($1, $2, 'todo', $3)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, user_id, title, status, sort_order, created_at, updated_at`,
-      [userId, title, sortOrder],
+      [userId, title, status ,sortOrder],
     );
 
     return res.status(201).json({ task: rows[0] });
