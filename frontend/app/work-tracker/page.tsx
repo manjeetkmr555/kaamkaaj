@@ -10,6 +10,7 @@ import {
   createWorkTask,
   deleteWorkTask,
   fetchWorkTasks,
+  reorderWorkTasks,
   updateWorkTaskStatus,
   type WorkBoard as WorkBoardData,
   type WorkStatus,
@@ -42,6 +43,13 @@ export default function WorkTrackerPage() {
       .catch(() => setError("Could not load tasks. Is the backend running?"))
       .finally(() => setLoading(false));
   }, [router, loadBoard]);
+
+  function reorderLocal(tasks: WorkTask[], fromIndex: number, toIndex: number) {
+    const next = [...tasks];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    return next;
+  }
 
   function moveTaskInBoard(
     prev: WorkBoardData,
@@ -80,7 +88,7 @@ export default function WorkTrackerPage() {
           </p>
           <h1 className="font-serif text-2xl text-stone-900">Work Tracker</h1>
           <p className="mt-1 text-sm text-stone-600">
-            Drag tasks between columns to update status.
+            Drag tasks between columns to update status, or drag ⋮⋮ within a column to reorder.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -114,6 +122,23 @@ export default function WorkTrackerPage() {
           // add the returned task to whichever column it belongs to
           setBoard((prev) => ({ ...prev, [status]: [...prev[status], task] }));
           setError(null);
+        }}
+        onReorderTask={async (status, fromIndex, toIndex) => {
+          const previousBoard = board;
+          const reordered = reorderLocal(board[status], fromIndex, toIndex);
+          setBoard((prev) => ({ ...prev, [status]: reordered }));
+          try {
+            const { tasks } = await reorderWorkTasks(
+              userId,
+              status,
+              reordered.map((task) => task.id),
+            );
+            setBoard(tasks);
+            setError(null);
+          } catch {
+            setBoard(previousBoard);
+            setError("Could not reorder tasks.");
+          }
         }}
         onMoveTask={async (taskId, fromStatus, toStatus) => {
           const previousBoard = board;

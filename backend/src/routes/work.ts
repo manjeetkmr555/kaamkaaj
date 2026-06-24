@@ -86,6 +86,44 @@ export function createWorkRouter(db: Db): Router {
     return res.status(201).json({ task: rows[0] });
   });
 
+  router.put("/reorder", async (req, res) => {
+    const userId = parseUserId(req.body?.userId);
+    const status = req.body?.status as WorkStatus;
+    const orderedIds = req.body?.orderedIds;
+
+    if (
+      !userId ||
+      !(await userExists(db, userId)) ||
+      !STATUSES.includes(status) ||
+      !Array.isArray(orderedIds)
+    ) {
+      return res.status(400).json({ message: "Invalid request." });
+    }
+
+    const ids = orderedIds.map(Number).filter((id) => Number.isInteger(id));
+    const client = await db.connect();
+
+    try {
+      await client.query("BEGIN");
+      for (const [index, id] of ids.entries()) {
+        await client.query(
+          `UPDATE work_tasks SET sort_order = $1, updated_at = $2
+           WHERE id = $3 AND user_id = $4 AND status = $5`,
+          [index, new Date(), id, userId, status],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    const tasks = await fetchTasksByUser(db, userId);
+    return res.json({ tasks });
+  });
+
   router.patch("/tasks/:id/status", async (req, res) => {
     const taskId = Number(req.params.id);
     const userId = parseUserId(req.body?.userId);

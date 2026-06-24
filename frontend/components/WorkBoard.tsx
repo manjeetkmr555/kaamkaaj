@@ -21,6 +21,11 @@ type WorkBoardProps = {
     fromStatus: WorkStatus,
     toStatus: WorkStatus,
   ) => Promise<void>;
+  onReorderTask?: (
+    status: WorkStatus,
+    fromIndex: number,
+    toIndex: number,
+  ) => Promise<void>;
   onDeleteTask?: (task: WorkTask) => Promise<void>;
 };
 
@@ -29,6 +34,7 @@ export function WorkBoard({
   readOnly = false,
   onAddTask,
   onMoveTask,
+  onReorderTask,
   onDeleteTask,
 }: WorkBoardProps) {
   // one input value and loading state per column (keyed by status)
@@ -39,7 +45,11 @@ export function WorkBoard({
   });
   const [adding, setAdding] = useState<WorkStatus | null>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
-  const [dropTarget, setDropTarget] = useState<WorkStatus | null>(null);
+  const [dragFromStatus, setDragFromStatus] = useState<WorkStatus | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    status: WorkStatus;
+    index: number;
+  } | null>(null);
 
   // called when the user submits the add-task form in any column
   async function handleAddTask(event: FormEvent, status: WorkStatus) {
@@ -61,15 +71,21 @@ export function WorkBoard({
         <section
           key={status}
           className={`work-column work-column--${status} ${
-            !readOnly && dropTarget === status ? "work-column--drop-active" : ""
+            !readOnly &&
+            dropTarget?.status === status &&
+            dragFromStatus !== null &&
+            dragFromStatus !== status
+              ? "work-column--drop-active"
+              : ""
           }`}
           onDragOver={
             readOnly
               ? undefined
               : (e) => {
+                  if (dragFromStatus === status) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
-                  setDropTarget(status);
+                  setDropTarget({ status, index: board[status].length });
                 }
           }
           onDragLeave={
@@ -77,7 +93,9 @@ export function WorkBoard({
               ? undefined
               : (e) => {
                   if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                  setDropTarget((current) => (current === status ? null : current));
+                  setDropTarget((current) =>
+                    current?.status === status ? null : current,
+                  );
                 }
           }
           onDrop={
@@ -87,6 +105,7 @@ export function WorkBoard({
                   e.preventDefault();
                   setDropTarget(null);
                   setDraggingId(null);
+                  setDragFromStatus(null);
 
                   const raw = e.dataTransfer.getData(DRAG_TYPE);
                   if (!raw || !onMoveTask) return;
@@ -94,6 +113,7 @@ export function WorkBoard({
                   const { taskId, fromStatus } = JSON.parse(raw) as {
                     taskId: number;
                     fromStatus: WorkStatus;
+                    fromIndex: number;
                   };
                   if (fromStatus === status) return;
                   await onMoveTask(taskId, fromStatus, status);
@@ -129,8 +149,50 @@ export function WorkBoard({
           ) : null}
 
           <ul className="work-column__list">
-            {board[status].map((task) => (
-              <li key={task.id}>
+            {board[status].map((task, index) => (
+              <li
+                key={task.id}
+                onDragOver={
+                  readOnly
+                    ? undefined
+                    : (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "move";
+                        setDropTarget({ status, index });
+                      }
+                }
+                onDrop={
+                  readOnly
+                    ? undefined
+                    : async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDropTarget(null);
+                        setDraggingId(null);
+                        setDragFromStatus(null);
+
+                        const raw = e.dataTransfer.getData(DRAG_TYPE);
+                        if (!raw) return;
+
+                        const { taskId, fromStatus, fromIndex } = JSON.parse(raw) as {
+                          taskId: number;
+                          fromStatus: WorkStatus;
+                          fromIndex: number;
+                        };
+
+                        if (fromStatus === status) {
+                          if (fromIndex === index || !onReorderTask) return;
+                          await onReorderTask(status, fromIndex, index);
+                          return;
+                        }
+
+                        if (onMoveTask) {
+                          await onMoveTask(taskId, fromStatus, status);
+                        }
+                      }
+                }
+              >
                 <div
                   draggable={!readOnly}
                   onDragStart={
@@ -138,12 +200,14 @@ export function WorkBoard({
                       ? undefined
                       : (e) => {
                           setDraggingId(task.id);
+                          setDragFromStatus(task.status);
                           e.dataTransfer.effectAllowed = "move";
                           e.dataTransfer.setData(
                             DRAG_TYPE,
                             JSON.stringify({
                               taskId: task.id,
                               fromStatus: task.status,
+                              fromIndex: index,
                             }),
                           );
                         }
@@ -153,12 +217,17 @@ export function WorkBoard({
                       ? undefined
                       : () => {
                           setDraggingId(null);
+                          setDragFromStatus(null);
                           setDropTarget(null);
                         }
                   }
                   className={`work-float-btn work-float-btn--${task.status} ${
                     readOnly ? "work-float-btn--readonly" : ""
-                  } ${draggingId === task.id ? "work-float-btn--dragging" : ""}`}
+                  } ${draggingId === task.id ? "work-float-btn--dragging" : ""} ${
+                    dropTarget?.status === status && dropTarget.index === index
+                      ? "work-float-btn--drop-target"
+                      : ""
+                  }`}
                 >
                   {!readOnly ? (
                     <span className="work-float-btn__grip" aria-hidden>
