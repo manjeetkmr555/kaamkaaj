@@ -34,6 +34,20 @@ export async function createWorkTask(
   );
 }
 
+export async function reorderWorkTasks(
+  userId: number,
+  status: WorkStatus,
+  orderedIds: number[],
+) {
+  return parseJson<{ tasks: WorkBoard }>(
+    await apiFetch("/api/work/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, status, orderedIds }),
+    }),
+  );
+}
+
 export async function updateWorkTaskStatus(
   userId: number,
   taskId: number,

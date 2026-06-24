@@ -469,6 +469,11 @@ body {
   cursor: grabbing;
 }
 
+.work-float-btn--drop-target {
+  outline: 2px dashed rgb(255 255 255 / 0.85);
+  outline-offset: 2px;
+}
+
 .work-float-btn--todo {
   background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
 }
