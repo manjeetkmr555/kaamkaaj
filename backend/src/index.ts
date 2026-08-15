@@ -8,6 +8,8 @@ import { createWorkRouter } from "./routes/work.js";
 import { createSharesRouter } from "./routes/shares.js";
 import { createReadingRouter } from "./routes/reading.js";
 import { createReadingSharesRouter } from "./routes/readingShares.js";
+import { createCollectionsRouter } from "./routes/collections.js";
+import { createCollectionSharesRouter } from "./routes/collectionShares.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const isProduction = process.env.NODE_ENV === "production";
@@ -65,6 +67,8 @@ async function main() {
   app.use("/api/work", createSharesRouter(db));
   app.use("/api/reading", createReadingRouter(db));
   app.use("/api/reading", createReadingSharesRouter(db));
+  app.use("/api/collections", createCollectionsRouter(db));
+  app.use("/api/collections", createCollectionSharesRouter(db));
 
   app.listen(PORT, () => {
     console.log(`KaamKaaj API listening on port ${PORT}`);

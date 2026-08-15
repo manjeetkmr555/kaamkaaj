@@ -25,16 +25,14 @@ services:
     env_file:
       - .env
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     depends_on:
       database:
         condition: service_healthy
 
   frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    image: kaamkaaj-frontend:latest
+    image: ${DOCKERHUB_USERNAME:-manjeetkmr555}/kaamkaaj-frontend:latest
+    pull_policy: always
     env_file:
       - .env
     ports:

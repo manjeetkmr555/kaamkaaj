@@ -15,11 +15,14 @@ import {
   fetchWorkTasks,
   type WorkShareReceived,
 } from "@/lib/workApi";
+import { fetchCollectionTree } from "@/lib/collectionsApi";
 
 type WorkStats = { todo: number; progress: number; done: number };
 type DashboardData = {
   workStats: WorkStats;
   readingCount: number;
+  collectionFolderCount: number;
+  collectionFileCount: number;
   workShared: WorkShareReceived[];
   readingShared: ReadingShareReceived[];
 };
@@ -65,6 +68,7 @@ function DashboardSkeleton() {
           <div className="dashboard-cards">
             <div className="dashboard-skeleton__card" />
             <div className="dashboard-skeleton__card" />
+            <div className="dashboard-skeleton__card" />
           </div>
           <div className="dashboard-skeleton__shared" />
         </div>
@@ -91,9 +95,13 @@ export default function DashboardPage() {
         tasks: { todo: [], progress: [], done: [] },
       })),
       fetchReadingItems(stored.id).catch(() => ({ items: [] })),
+      fetchCollectionTree(stored.id).catch(() => ({
+        folders: [],
+        files: [],
+      })),
       fetchReceivedShares(stored.id).catch(() => ({ shares: [] })),
       fetchReadingReceivedShares(stored.id).catch(() => ({ shares: [] })),
-    ]).then(([work, reading, workShares, readingShares]) => {
+    ]).then(([work, reading, collections, workShares, readingShares]) => {
       setData({
         workStats: {
           todo: work.tasks.todo.length,
@@ -101,6 +109,8 @@ export default function DashboardPage() {
           done: work.tasks.done.length,
         },
         readingCount: reading.items.length,
+        collectionFolderCount: collections.folders.length,
+        collectionFileCount: collections.files.length,
         workShared: workShares.shares,
         readingShared: readingShares.shares,
       });
@@ -130,7 +140,7 @@ export default function DashboardPage() {
                 {getGreeting()}, {getDisplayName(user.email)}
               </h1>
               <p className="mt-1 text-sm text-stone-600">
-                Your work and reading, in one calm place.
+                Your work, reading, and collections in one calm place.
               </p>
             </div>
             <div className="dashboard-hero__actions">
@@ -217,6 +227,43 @@ export default function DashboardPage() {
               ) : null}
               <span className="dashboard-card__cta">
                 Open List
+                <span className="dashboard-card__arrow" aria-hidden>
+                  →
+                </span>
+              </span>
+            </div>
+          </Link>
+
+          <Link href="/collections" className="dashboard-card dashboard-card--collections group">
+            <div className="dashboard-card__icon" aria-hidden>
+              <CollectionsIcon />
+            </div>
+            <div className="dashboard-card__body">
+              <h2 className="font-serif text-xl text-stone-900 group-hover:text-teal-900">
+                Collections
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-stone-600">
+                Keep folders and files together — notes, links, or anything you
+                want to organize.
+              </p>
+              <div className="dashboard-card__stats">
+                <span className="dashboard-stat dashboard-stat--collections-folders">
+                  {data.collectionFolderCount}{" "}
+                  {data.collectionFolderCount === 1 ? "Folder" : "Folders"}
+                </span>
+                <span className="dashboard-stat dashboard-stat--collections-files">
+                  {data.collectionFileCount}{" "}
+                  {data.collectionFileCount === 1 ? "File" : "Files"}
+                </span>
+              </div>
+              {data.collectionFolderCount === 0 &&
+              data.collectionFileCount === 0 ? (
+                <p className="dashboard-card__hint">
+                  No items yet — create your first folder or file.
+                </p>
+              ) : null}
+              <span className="dashboard-card__cta">
+                Open collections
                 <span className="dashboard-card__arrow" aria-hidden>
                   →
                 </span>
@@ -336,6 +383,24 @@ function ReadingListIcon() {
         opacity="0.85"
       />
       <path d="M10 10h8M10 14h6" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CollectionsIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <path
+        d="M4 8.5A2.5 2.5 0 016.5 6h5.2l1.8 2H21.5A2.5 2.5 0 0124 10.5v9A2.5 2.5 0 0121.5 22h-15A2.5 2.5 0 014 19.5v-11z"
+        fill="currentColor"
+        opacity="0.85"
+      />
+      <path
+        d="M9 14h10M9 17.5h7"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
