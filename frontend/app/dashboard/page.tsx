@@ -109,8 +109,8 @@ export default function DashboardPage() {
           done: work.tasks.done.length,
         },
         readingCount: reading.items.length,
-        collectionFolderCount: collections.folders.length,
-        collectionFileCount: collections.files.length,
+        collectionFolderCount: collections.folders?.length ?? 0,
+        collectionFileCount: collections.files?.length ?? 0,
         workShared: workShares.shares,
         readingShared: readingShares.shares,
       });

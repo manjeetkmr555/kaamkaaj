@@ -37,7 +37,8 @@ async function main() {
         }
         if (
           allowedOrigins.has(origin) ||
-          (!isProduction && /^https?:\/\/localhost(:\d+)?$/.test(origin))
+          (!isProduction &&
+            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
         ) {
           callback(null, true);
           return;

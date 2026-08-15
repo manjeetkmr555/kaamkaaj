@@ -450,6 +450,7 @@ export function CollectionsBoard({
         {boardItems.map((item) => {
           if (item.type === "folder") {
             const folder = item.folder;
+            if (!folder) return null;
             const contents = folderContentsById.get(folder.id) ?? {
               subfolders: 0,
               files: 0,
@@ -545,6 +546,7 @@ export function CollectionsBoard({
             );
           }
 
+          if (item.type !== "file" || !item.file) return null;
           const file = item.file;
           const viewerCount =
             file.folder_id === null

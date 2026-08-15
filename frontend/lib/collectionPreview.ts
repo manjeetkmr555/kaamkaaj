@@ -12,10 +12,11 @@ export function isLikelyImageUrl(url: string): boolean {
 }
 
 /** Background image for a collection file card. */
-export function getCollectionFilePreviewUrl(input: {
+export function getCollectionFilePreviewUrl(input?: {
   url?: string | null;
   previewImageUrl?: string | null;
-}): string | null {
+} | null): string | null {
+  if (!input) return null;
   if (input.previewImageUrl?.trim()) return input.previewImageUrl.trim();
 
   const normalized = input.url ? normalizeUrl(input.url) : null;

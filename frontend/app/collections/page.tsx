@@ -28,8 +28,8 @@ export default function CollectionsPage() {
 
   const loadTree = useCallback(async (uid: number) => {
     const tree = await fetchCollectionTree(uid);
-    setFolders(tree.folders);
-    setFiles(tree.files);
+    setFolders(tree.folders ?? []);
+    setFiles(tree.files ?? []);
   }, []);
 
   useEffect(() => {
