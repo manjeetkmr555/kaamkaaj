@@ -64,6 +64,7 @@ function decodeHtmlEntities(text: string): string {
 export async function fetchPageMeta(url: string): Promise<{
   title: string;
   description: string;
+  image: string | null;
 }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -110,7 +111,20 @@ export async function fetchPageMeta(url: string): Promise<{
       extractMeta(html, "description") ??
       "";
 
-    return { title, description };
+    const rawImage =
+      extractMeta(html, "og:image") ??
+      extractMeta(html, "twitter:image") ??
+      null;
+    let image: string | null = null;
+    if (rawImage) {
+      try {
+        image = new URL(rawImage, url).toString();
+      } catch {
+        image = null;
+      }
+    }
+
+    return { title, description, image };
   } finally {
     clearTimeout(timeout);
   }
